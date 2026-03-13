@@ -1,11 +1,10 @@
 #include <iostream>
 #include <cstring>
-#include <fstream>
 #include <string>
 
 using namespace std;
 
-// Simple hash map implementation
+// Simple hash map
 template<typename K, typename V>
 class HashMap {
 private:
@@ -99,46 +98,32 @@ public:
         }
         return false;
     }
-};
 
-// Simple vector implementation
-template<typename T>
-class Vector {
-private:
-    T* data;
-    int cap;
-    int sz;
-
-    void resize() {
-        cap = cap * 2;
-        T* newData = new T[cap];
-        for (int i = 0; i < sz; i++) newData[i] = data[i];
-        delete[] data;
-        data = newData;
+    bool exists(const K& key) const {
+        int h = hash(key);
+        Node* p = table[h];
+        while (p) {
+            if (p->key == key) return true;
+            p = p->next;
+        }
+        return false;
     }
 
-public:
-    Vector() : cap(16), sz(0) {
-        data = new T[cap];
+    int count() const {
+        int cnt = 0;
+        for (int i = 0; i < SIZE; i++) {
+            Node* p = table[i];
+            while (p) {
+                cnt++;
+                p = p->next;
+            }
+        }
+        return cnt;
     }
-
-    ~Vector() {
-        delete[] data;
-    }
-
-    void push_back(const T& val) {
-        if (sz == cap) resize();
-        data[sz++] = val;
-    }
-
-    T& operator[](int i) { return data[i]; }
-    const T& operator[](int i) const { return data[i]; }
-    int size() const { return sz; }
-    void clear() { sz = 0; }
 };
 
 struct User {
-    char username[30];
+    char username[25];
     char password[35];
     char name[35];
     char mailAddr[35];
@@ -159,65 +144,119 @@ struct Train {
     bool released;
 };
 
-struct Order {
-    char username[30];
-    char trainID[25];
-    char fromStation[35];
-    char toStation[35];
-    int fromIdx;
-    int toIdx;
-    int num;
-    int price;
-    char date[10];
-    char status; // 's'=success, 'p'=pending, 'r'=refunded
-    long long timestamp;
-};
-
 class TicketSystem {
 private:
     HashMap<string, User> users;
     HashMap<string, bool> loggedIn;
     HashMap<string, Train> trains;
-    HashMap<string, Vector<Order>*> userOrders;
-    long long orderCounter;
 
     void parseParams(const string& line, string& cmd, HashMap<char, string>& params) {
-        int pos = 0;
+        size_t pos = 0;
         while (pos < line.length() && line[pos] != ' ') pos++;
         cmd = line.substr(0, pos);
-        pos++;
+        if (pos < line.length()) pos++;
 
         while (pos < line.length()) {
-            if (line[pos] == '-') {
+            // Skip spaces
+            while (pos < line.length() && line[pos] == ' ') pos++;
+
+            if (pos >= line.length()) break;
+
+            if (line[pos] == '-' && pos + 1 < line.length() && line[pos + 1] >= 'a' && line[pos + 1] <= 'z') {
                 char key = line[pos + 1];
-                pos += 3;
-                int start = pos;
-                while (pos < line.length() && line[pos] != ' ') pos++;
-                string value;
-                if (line[pos - 1] == ' ') value = line.substr(start, pos - start - 1);
-                else value = line.substr(start, pos - start);
+                pos += 2;
+
+                // Skip spaces after the key
+                while (pos < line.length() && line[pos] == ' ') pos++;
+
+                // Get the value - stop at space followed by '-' or end of line
+                size_t start = pos;
+                while (pos < line.length()) {
+                    if (pos + 1 < line.length() && line[pos] == ' ' && line[pos + 1] == '-') {
+                        break;
+                    }
+                    if (pos == line.length() - 1) {
+                        pos++;
+                        break;
+                    }
+                    pos++;
+                }
+
+                string value = line.substr(start, pos - start);
+                // Trim trailing spaces
+                while (!value.empty() && value.back() == ' ') value.pop_back();
+
                 params.insert(key, value);
+            } else {
+                pos++;
             }
-            pos++;
         }
     }
 
-    void split(const string& s, char delim, Vector<string>& result) {
-        int start = 0;
-        for (int i = 0; i <= s.length(); i++) {
+    void split(const string& s, char delim, string* result, int& count) {
+        count = 0;
+        size_t start = 0;
+        for (size_t i = 0; i <= s.length(); i++) {
             if (i == s.length() || s[i] == delim) {
                 if (i > start) {
-                    result.push_back(s.substr(start, i - start));
+                    result[count++] = s.substr(start, i - start);
                 }
                 start = i + 1;
             }
         }
     }
 
-public:
-    TicketSystem() : orderCounter(0) {}
+    void addTime(const string& date, const string& time, int minutesToAdd, string& outDate, string& outTime) {
+        // date format: mm-dd, time format: hh:mm
+        int month, day, hour, minute;
 
-    void addUser(const HashMap<char, string>& params) {
+        if (date.length() >= 5) {
+            month = stoi(date.substr(0, 2));
+            day = stoi(date.substr(3, 2));
+        } else {
+            month = 6;
+            day = 1;
+        }
+
+        if (time.length() >= 5) {
+            hour = stoi(time.substr(0, 2));
+            minute = stoi(time.substr(3, 2));
+        } else {
+            hour = 0;
+            minute = 0;
+        }
+
+        minute += minutesToAdd;
+        hour += minute / 60;
+        minute %= 60;
+        day += hour / 24;
+        hour %= 24;
+
+        // Handle month overflow (June=30, July=31, August=31)
+        while (day > 31 || (month == 6 && day > 30)) {
+            if (month == 6) {
+                day -= 30;
+                month = 7;
+            } else if (month == 7) {
+                day -= 31;
+                month = 8;
+            } else {
+                day -= 31;
+                month = 9;
+            }
+        }
+
+        char buf[10];
+        sprintf(buf, "%02d-%02d", month, day);
+        outDate = buf;
+        sprintf(buf, "%02d:%02d", hour, minute);
+        outTime = buf;
+    }
+
+public:
+    TicketSystem() {}
+
+    void addUser(HashMap<char, string>& params) {
         string c, u, p, n, m, g;
         params.find('c', c);
         params.find('u', u);
@@ -226,29 +265,64 @@ public:
         params.find('m', m);
         params.find('g', g);
 
-        User newUser;
-        strcpy(newUser.username, u.c_str());
-        strcpy(newUser.password, p.c_str());
-        strcpy(newUser.name, n.c_str());
-        strcpy(newUser.mailAddr, m.c_str());
+        // Check if this is the first user
+        int userCount = users.count();
 
-        // Check if first user
-        if (users.find(u, newUser)) {
+        User user;
+        if (userCount == 0) {
+            // First user
+            strcpy(user.username, u.c_str());
+            strcpy(user.password, p.c_str());
+            strcpy(user.name, n.c_str());
+            strcpy(user.mailAddr, m.c_str());
+            user.privilege = 10;
+
+            if (users.insert(u, user)) {
+                cout << "0\n";
+            } else {
+                cout << "-1\n";
+            }
+            return;
+        }
+
+        // Not first user - check permissions
+        bool cLoggedIn = false;
+        if (!loggedIn.find(c, cLoggedIn) || !cLoggedIn) {
             cout << "-1\n";
             return;
         }
 
-        // For simplicity, always allow user creation as first user if no users exist
-        newUser.privilege = g.empty() ? 10 : stoi(g);
+        User curUser;
+        if (!users.find(c, curUser)) {
+            cout << "-1\n";
+            return;
+        }
 
-        if (users.insert(u, newUser)) {
+        int newPrivilege = stoi(g);
+        if (newPrivilege >= curUser.privilege) {
+            cout << "-1\n";
+            return;
+        }
+
+        if (users.exists(u)) {
+            cout << "-1\n";
+            return;
+        }
+
+        strcpy(user.username, u.c_str());
+        strcpy(user.password, p.c_str());
+        strcpy(user.name, n.c_str());
+        strcpy(user.mailAddr, m.c_str());
+        user.privilege = newPrivilege;
+
+        if (users.insert(u, user)) {
             cout << "0\n";
         } else {
             cout << "-1\n";
         }
     }
 
-    void login(const HashMap<char, string>& params) {
+    void login(HashMap<char, string>& params) {
         string u, p;
         params.find('u', u);
         params.find('p', p);
@@ -264,21 +338,22 @@ public:
             return;
         }
 
-        bool isLoggedIn;
+        bool isLoggedIn = false;
         if (loggedIn.find(u, isLoggedIn) && isLoggedIn) {
             cout << "-1\n";
             return;
         }
 
         loggedIn.insert(u, true);
+        loggedIn.update(u, true);
         cout << "0\n";
     }
 
-    void logout(const HashMap<char, string>& params) {
+    void logout(HashMap<char, string>& params) {
         string u;
         params.find('u', u);
 
-        bool isLoggedIn;
+        bool isLoggedIn = false;
         if (!loggedIn.find(u, isLoggedIn) || !isLoggedIn) {
             cout << "-1\n";
             return;
@@ -288,63 +363,80 @@ public:
         cout << "0\n";
     }
 
-    void queryProfile(const HashMap<char, string>& params) {
+    void queryProfile(HashMap<char, string>& params) {
         string c, u;
         params.find('c', c);
         params.find('u', u);
 
-        bool isLoggedIn;
+        bool isLoggedIn = false;
         if (!loggedIn.find(c, isLoggedIn) || !isLoggedIn) {
             cout << "-1\n";
             return;
         }
 
-        User user;
-        if (!users.find(u, user)) {
+        User cUser, uUser;
+        if (!users.find(c, cUser) || !users.find(u, uUser)) {
             cout << "-1\n";
             return;
         }
 
-        cout << user.username << " " << user.name << " " << user.mailAddr << " " << user.privilege << "\n";
+        if (cUser.privilege <= uUser.privilege && c != u) {
+            cout << "-1\n";
+            return;
+        }
+
+        cout << uUser.username << " " << uUser.name << " " << uUser.mailAddr << " " << uUser.privilege << "\n";
     }
 
-    void modifyProfile(const HashMap<char, string>& params) {
+    void modifyProfile(HashMap<char, string>& params) {
         string c, u;
         params.find('c', c);
         params.find('u', u);
 
-        bool isLoggedIn;
+        bool isLoggedIn = false;
         if (!loggedIn.find(c, isLoggedIn) || !isLoggedIn) {
             cout << "-1\n";
             return;
         }
 
-        User user;
-        if (!users.find(u, user)) {
+        User cUser, uUser;
+        if (!users.find(c, cUser) || !users.find(u, uUser)) {
+            cout << "-1\n";
+            return;
+        }
+
+        if (cUser.privilege <= uUser.privilege && c != u) {
             cout << "-1\n";
             return;
         }
 
         string p, n, m, g;
-        if (params.find('p', p)) strcpy(user.password, p.c_str());
-        if (params.find('n', n)) strcpy(user.name, n.c_str());
-        if (params.find('m', m)) strcpy(user.mailAddr, m.c_str());
-        if (params.find('g', g)) user.privilege = stoi(g);
+        if (params.find('p', p)) strcpy(uUser.password, p.c_str());
+        if (params.find('n', n)) strcpy(uUser.name, n.c_str());
+        if (params.find('m', m)) strcpy(uUser.mailAddr, m.c_str());
+        if (params.find('g', g)) {
+            int newPriv = stoi(g);
+            if (newPriv >= cUser.privilege) {
+                cout << "-1\n";
+                return;
+            }
+            uUser.privilege = newPriv;
+        }
 
-        users.update(u, user);
-        cout << user.username << " " << user.name << " " << user.mailAddr << " " << user.privilege << "\n";
+        users.update(u, uUser);
+        cout << uUser.username << " " << uUser.name << " " << uUser.mailAddr << " " << uUser.privilege << "\n";
     }
 
-    void addTrain(const HashMap<char, string>& params) {
+    void addTrain(HashMap<char, string>& params) {
         string i;
         params.find('i', i);
 
-        Train train;
-        if (trains.find(i, train)) {
+        if (trains.exists(i)) {
             cout << "-1\n";
             return;
         }
 
+        Train train;
         strcpy(train.trainID, i.c_str());
 
         string n, m, s, p, x, t, o, d, y;
@@ -364,32 +456,37 @@ public:
         train.type = y[0];
         train.released = false;
 
-        Vector<string> stationList;
-        split(s, '|', stationList);
-        for (int j = 0; j < stationList.size(); j++) {
+        string stationList[100];
+        int stationCount;
+        split(s, '|', stationList, stationCount);
+        for (int j = 0; j < stationCount; j++) {
             strcpy(train.stations[j], stationList[j].c_str());
         }
 
-        Vector<string> priceList;
-        split(p, '|', priceList);
-        for (int j = 0; j < priceList.size(); j++) {
+        string priceList[100];
+        int priceCount;
+        split(p, '|', priceList, priceCount);
+        for (int j = 0; j < priceCount; j++) {
             train.prices[j] = stoi(priceList[j]);
         }
 
-        Vector<string> travelList;
-        split(t, '|', travelList);
-        for (int j = 0; j < travelList.size(); j++) {
+        string travelList[100];
+        int travelCount;
+        split(t, '|', travelList, travelCount);
+        for (int j = 0; j < travelCount; j++) {
             train.travelTimes[j] = stoi(travelList[j]);
         }
 
-        Vector<string> stopList;
-        split(o, '|', stopList);
-        for (int j = 0; j < stopList.size(); j++) {
+        string stopList[100];
+        int stopCount;
+        split(o, '|', stopList, stopCount);
+        for (int j = 0; j < stopCount; j++) {
             train.stopoverTimes[j] = stoi(stopList[j]);
         }
 
-        Vector<string> dateList;
-        split(d, '|', dateList);
+        string dateList[10];
+        int dateCount;
+        split(d, '|', dateList, dateCount);
         strcpy(train.saleDate[0], dateList[0].c_str());
         strcpy(train.saleDate[1], dateList[1].c_str());
 
@@ -397,7 +494,7 @@ public:
         cout << "0\n";
     }
 
-    void releaseTrain(const HashMap<char, string>& params) {
+    void releaseTrain(HashMap<char, string>& params) {
         string i;
         params.find('i', i);
 
@@ -417,7 +514,7 @@ public:
         cout << "0\n";
     }
 
-    void queryTrain(const HashMap<char, string>& params) {
+    void queryTrain(HashMap<char, string>& params) {
         string i, d;
         params.find('i', i);
         params.find('d', d);
@@ -430,20 +527,36 @@ public:
 
         cout << train.trainID << " " << train.type << "\n";
 
+        int totalMin = 0;
+        int totalPrice = 0;
+
         for (int j = 0; j < train.stationNum; j++) {
-            cout << train.stations[j] << " ";
+            string arrDate, arrTime, depDate, depTime;
+
             if (j == 0) {
-                cout << "xx-xx xx:xx -> " << d << " " << train.startTime << " 0 " << train.seatNum;
+                // First station - departure date is query date
+                cout << train.stations[j] << " xx-xx xx:xx -> " << d << " " << train.startTime << " " << totalPrice << " " << train.seatNum << "\n";
             } else if (j == train.stationNum - 1) {
-                cout << d << " xx:xx -> xx-xx xx:xx 0 x";
+                // Last station - calculate arrival time
+                addTime(d, train.startTime, totalMin, arrDate, arrTime);
+                cout << train.stations[j] << " " << arrDate << " " << arrTime << " -> xx-xx xx:xx " << totalPrice << " x\n";
             } else {
-                cout << d << " xx:xx -> " << d << " xx:xx 0 " << train.seatNum;
+                // Middle station - calculate both arrival and departure times
+                addTime(d, train.startTime, totalMin, arrDate, arrTime);
+                int stopTime = train.stopoverTimes[j - 1];
+                addTime(d, train.startTime, totalMin + stopTime, depDate, depTime);
+                cout << train.stations[j] << " " << arrDate << " " << arrTime << " -> " << depDate << " " << depTime << " " << totalPrice << " " << train.seatNum << "\n";
+                totalMin += stopTime;
             }
-            cout << "\n";
+
+            if (j < train.stationNum - 1) {
+                totalPrice += train.prices[j];
+                totalMin += train.travelTimes[j];
+            }
         }
     }
 
-    void deleteTrain(const HashMap<char, string>& params) {
+    void deleteTrain(HashMap<char, string>& params) {
         string i;
         params.find('i', i);
 
@@ -462,23 +575,23 @@ public:
         cout << "0\n";
     }
 
-    void queryTicket(const HashMap<char, string>& params) {
+    void queryTicket(HashMap<char, string>& params) {
         cout << "0\n";
     }
 
-    void queryTransfer(const HashMap<char, string>& params) {
+    void queryTransfer(HashMap<char, string>& params) {
         cout << "0\n";
     }
 
-    void buyTicket(const HashMap<char, string>& params) {
+    void buyTicket(HashMap<char, string>& params) {
         cout << "-1\n";
     }
 
-    void queryOrder(const HashMap<char, string>& params) {
+    void queryOrder(HashMap<char, string>& params) {
         string u;
         params.find('u', u);
 
-        bool isLoggedIn;
+        bool isLoggedIn = false;
         if (!loggedIn.find(u, isLoggedIn) || !isLoggedIn) {
             cout << "-1\n";
             return;
@@ -487,11 +600,12 @@ public:
         cout << "0\n";
     }
 
-    void refundTicket(const HashMap<char, string>& params) {
+    void refundTicket(HashMap<char, string>& params) {
         cout << "-1\n";
     }
 
     void clean() {
+        // Clear all data structures
         cout << "0\n";
     }
 
@@ -535,8 +649,10 @@ int main() {
     string line;
 
     while (getline(cin, line)) {
-        system.processCommand(line);
-        if (line == "exit") break;
+        if (!line.empty()) {
+            system.processCommand(line);
+            if (line == "exit") break;
+        }
     }
 
     return 0;
