@@ -5,6 +5,5 @@ Makefile
 code
 *.o
 *.dat
-*.txt
 .vscode/
 .idea/
